@@ -14,6 +14,12 @@ License: https://creativecommons.org/licenses/by/4.0/
 
 Attribution must retain the source credits documented in `README.md`, including the enhanced edition published by e2002 and the original Lee Ambrosius / HyperPics source.
 
+## Autodesk documentation excerpts
+
+`data/autodesk_documentation.jsonl` contains titles, short descriptions, summaries, URLs, and identifiers extracted from Autodesk official documentation. Those Autodesk-originated excerpts remain subject to Autodesk's rights and are explicitly excluded from this repository's CC BY 4.0 data license. No license to Autodesk trademarks or documentation is granted by this repository.
+
+The crawler, matching logic, validators, and original code remain covered by the MIT License below.
+
 ## Code
 
 The validation script and code examples are licensed under the MIT License:

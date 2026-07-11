@@ -167,12 +167,42 @@ It was new in 2011 and changed in 2015 and 2016.
 
 不在数据集中保存固定 `search_text`，原因是它能由结构字段生成，重复保存会增大体积并造成字段不一致。构建向量索引时可将 `name`、`type`、`availability`、`new_in`、`changed_in`、`removed_in` 和 `restored_in` 拼成嵌入文本，同时把原始 JSON 作为 metadata 保存。
 
+## Autodesk 官方文档扩展
+
+`data/autodesk_documentation.jsonl` 为全部 2608 条生命周期记录提供一对一的 Autodesk 官方英文文档结果：
+
+- Commands：1444 条，其中 850 条匹配官方主题，594 条标记为 `not_found`。
+- System Variables：1164 条，其中 1043 条匹配官方主题，121 条标记为 `not_found`。
+- 总计：1893 条 `matched`，715 条 `not_found`，0 条冲突，0 条网络或解析错误。
+
+抓取器优先查询记录最后可用的 AutoCAD 文档版本，并在需要时回退到其他可用版本。它只接受 `help.autodesk.com` CloudHelp 精确标题结果，不使用论坛、技术支持文章或第三方说明补齐。旧版 `docs.autodesk.com` 的 robots.txt 禁止自动抓取，因此没有绕过该限制；无法从新版官方搜索获取的旧项目保留为 `not_found`。
+
+每条记录只保存生命周期 ID、匹配状态、文档版本、官方名称、标题、URL、GUID、一句话描述和精简 Summary。示例：
+
+```json
+{"lifecycle_id":"cmd-0159","type":"command","name":"3DSIN","available_in_document_version":true,"match":{"status":"matched","strategy":"metadata_exact","document_version":"2027"},"documentation":{"official_name":"3DSIN","title":"3DSIN (Command)","url":"https://help.autodesk.com/cloudhelp/2027/ENU/AutoCAD-Core/files/GUID-A28A2118-11C4-49D3-B8E5-A99EE46C1D32.htm","guid":"GUID-A28A2118-11C4-49D3-B8E5-A99EE46C1D32","description":"Imports a 3ds Max (3DS) file.","summary":[]}}
+```
+
+重新抓取（会读取 robots.txt，使用本地忽略缓存并支持中断续跑）：
+
+```powershell
+python scripts/crawl_autodesk_documentation.py --workers 4
+python scripts/validate_autodesk_documentation.py
+```
+
+抓取报告位于 `reports/autodesk_documentation_report.json`，包含匹配策略、文档版本、未匹配 ID 和 HTTP 缓存统计。CI 只验证已提交数据，不联网重新抓取。
+
 ## 文件
 
 - `data/autocad_2004_2027.jsonl`：唯一正式数据文件。
 - `metadata.json`：版本轴、颜色语义、来源哈希和统计。
 - `schema.json`：单条记录的 JSON Schema。
-- `scripts/validate.py`：无第三方依赖的完整验证器。
+- `scripts/validate.py`：生命周期数据验证器。
+- `data/autodesk_documentation.jsonl`：2608 条 Autodesk 官方文档匹配结果。
+- `schema/autodesk_documentation.schema.json`：文档结果 Schema。
+- `reports/autodesk_documentation_report.json`：全量抓取报告。
+- `scripts/crawl_autodesk_documentation.py`：可恢复的跨版本抓取器。
+- `scripts/validate_autodesk_documentation.py`：文档数据验证器。
 
 运行验证：
 
