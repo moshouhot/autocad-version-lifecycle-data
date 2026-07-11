@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:autocad-lifecycle-record:1.0.0",
+  "title": "AutoCAD lifecycle record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "type",
+    "name",
+    "availability",
+    "new_in",
+    "changed_in",
+    "removed_in",
+    "restored_in",
+    "available_in_latest",
+    "source"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^(cmd|sysvar)-[0-9]{4}$"
+    },
+    "type": {
+      "enum": [
+        "command",
+        "system_variable"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "availability": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "new_in": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "changed_in": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "removed_in": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "restored_in": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "available_in_latest": {
+      "type": "boolean"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page",
+        "row"
+      ],
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "row": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "express_tools": {
+      "type": "boolean"
+    },
+    "occurrence": {
+      "type": "integer",
+      "minimum": 2
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "command"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "express_tools"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "system_variable"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "express_tools"
+          ]
+        }
+      }
+    }
+  ]
+}
