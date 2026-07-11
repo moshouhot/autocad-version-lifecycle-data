@@ -1,0 +1,75 @@
+{
+  "generated_at": "2026-07-11T12:02:31.058477+00:00",
+  "counts": {
+    "total": 715,
+    "commands": 594,
+    "system_variables": 121
+  },
+  "target_count": 715,
+  "evidence_statuses": {
+    "corroborated": 533,
+    "conflict": 43,
+    "not_found": 127,
+    "single_source": 12
+  },
+  "sources": {
+    "cadforum": {
+      "matched": 588,
+      "not_found": 127
+    },
+    "hyperpics": {
+      "robots_denied": 121
+    }
+  },
+  "related_item_records": 15,
+  "conflict_ids": [
+    "cmd-0005",
+    "cmd-0052",
+    "cmd-0095",
+    "cmd-0141",
+    "cmd-0371",
+    "cmd-0431",
+    "cmd-0826",
+    "cmd-0829",
+    "cmd-0838",
+    "cmd-0839",
+    "cmd-0842",
+    "cmd-0843",
+    "cmd-0847",
+    "cmd-0849",
+    "cmd-0850",
+    "cmd-0855",
+    "cmd-0858",
+    "cmd-0862",
+    "cmd-0864",
+    "cmd-0909",
+    "cmd-1021",
+    "cmd-1118",
+    "cmd-1168",
+    "cmd-1242",
+    "cmd-1334",
+    "sysvar-0082",
+    "sysvar-0112",
+    "sysvar-0162",
+    "sysvar-0255",
+    "sysvar-0373",
+    "sysvar-0430",
+    "sysvar-0433",
+    "sysvar-0599",
+    "sysvar-0665",
+    "sysvar-0666",
+    "sysvar-0677",
+    "sysvar-0680",
+    "sysvar-0681",
+    "sysvar-0696",
+    "sysvar-0862",
+    "sysvar-0865",
+    "sysvar-0866",
+    "sysvar-0955"
+  ],
+  "errors": [],
+  "http": {
+    "robots_denied": 1,
+    "cache_hits": 715
+  }
+}
