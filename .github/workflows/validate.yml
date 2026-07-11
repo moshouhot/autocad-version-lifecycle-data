@@ -24,3 +24,5 @@ jobs:
         run: python scripts/validate.py
       - name: Validate Autodesk documentation index
         run: python scripts/validate_autodesk_documentation.py
+      - name: Validate community cross-validation data
+        run: python scripts/validate_community_documentation.py
