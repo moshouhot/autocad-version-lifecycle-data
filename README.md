@@ -192,42 +192,62 @@ python scripts/validate_autodesk_documentation.py
 
 抓取报告位于 `reports/autodesk_documentation_report.json`，包含匹配策略、文档版本、未匹配 ID 和 HTTP 缓存统计。CI 只验证已提交数据，不联网重新抓取。
 
-## 社区资料交叉验证
+## 社区用途描述补充层
 
-`data/community_documentation.jsonl` 专门复核 Autodesk 官方结果中的 715 条 `not_found`，不会覆盖生命周期数据或官方文档数据。每条记录仍用 `lifecycle_id` 一对一关联。
+`data/community_documentation.jsonl` 专门为 Autodesk 官方结果中的715条 `not_found` 补充第三方用途说明。它不是第二套生命周期数据，也不会判断 PDF 生命周期是否正确。
 
-本次结果：
+**生命周期以 PDF 数据为唯一准则：**
 
-- 目标：715 条（Commands 594，System Variables 121）。
-- CADForum 精确命中：588 条；仍未找到：127 条。
-- `corroborated`：533 条；一个第三方来源与生命周期核心结论一致。
-- `single_source`：12 条；第三方有记录，但对应生命周期重复行没有可比较的可用区间。
-- `conflict`：43 条；第三方版本或明确的“no longer supported”说法与生命周期表不同。
-- `not_found`：127 条。
-- `confirmed`：0 条。自动抓取没有获得第二个独立直接来源，因此不把单一来源夸大为确认。
-- 从说明中严格提取出 15 条带明确上下文的关联命令/变量证据。
+- `availability`
+- `new_in`
+- `changed_in`
+- `removed_in`
+- `restored_in`
+- `available_in_latest`
 
-主要第三方来源：
+以上字段只能从 `data/autocad_2004_2027.jsonl` 读取。CADForum、HyperPics 或其他网站的版本年份、obsolete、no longer supported 等说法都不能覆盖这些字段。
 
-- [CADForum AutoCAD Commands](https://www.cadforum.cz/en/command.asp)
-- [CADForum AutoCAD System Variables](https://www.cadforum.cz/en/variable.asp)
-- [HyperPics System Variables](http://www.hyperpics.com/system_variables/)
+当前描述覆盖率：
 
-HyperPics 的 HTTP 页面可由普通浏览器访问，但其 `robots.txt` 对本抓取器 User-Agent 返回 403。抓取器遵守该限制，没有更换身份或绕过；121 条变量均明确记录 `hyperpics: robots_denied`。因此当前社区证据主要来自 CADForum，HyperPics 只保留为待人工核查来源和原生命周期表的署名来源。
+- 目标：715条（Commands 594，System Variables 121）。
+- `matched`：588条，已取得非空用途描述。
+- `not_found`：127条，尚未找到合格描述。
+- `ambiguous`：0条。
+- 从描述中提取出15条明确关联命令或系统变量。
 
-证据状态含义：
+正式记录只保留必要字段：
 
-| 状态 | 含义 |
-|---|---|
-| `confirmed` | 至少两个独立直接来源一致；当前数据中为 0 条 |
-| `corroborated` | 一个可靠第三方直接来源与生命周期信息一致 |
-| `single_source` | 第三方有记录，但生命周期中没有足够字段可比较 |
-| `conflict` | 来源之间存在实质差异，双方说法均保留 |
-| `not_found` | 启用的合规来源没有精确命中 |
+```json
+{
+  "lifecycle_id": "sysvar-0015",
+  "type": "system_variable",
+  "name": "ACISOUTVER",
+  "description_status": "matched",
+  "descriptions": [
+    {
+      "source": "cadforum",
+      "url": "https://www.cadforum.cz/en/variable.asp?cmd=ACISOUTVER",
+      "matched_name": "ACISOUTVER",
+      "text": "Controls the ACIS version used for files exported by ACISOUT"
+    }
+  ],
+  "related_items": [
+    {
+      "name": "ACISOUT",
+      "type": "command",
+      "relation": "controlled_command",
+      "source_url": "https://www.cadforum.cz/en/variable.asp?cmd=ACISOUTVER",
+      "evidence_text": "Controls the ACIS version used for files exported by ACISOUT"
+    }
+  ]
+}
+```
 
-`obsolete` 不会自动解释为不可用；只有来源明确写出 `no longer supported` 或 `removed` 时才与 `available_in_latest` 比较。冲突是“需要复核”的信号，不是对原数据的自动修正。例如 `BLIPMODE` 同时保留生命周期“2027 可用”和 CADForum “Variable no longer supported!” 两个说法。
+PDF 中同名但不同 occurrence 的记录继续分别存在。如果第三方只有一个同名用途说明，可以共享说明；第三方版本年份不用于合并或选择 occurrence。
 
-### Python：合并三层数据
+主要描述来源：[CADForum Commands](https://www.cadforum.cz/en/command.asp) 和 [CADForum System Variables](https://www.cadforum.cz/en/variable.asp)。HyperPics 已按允许使用普通浏览器 User-Agent 检查公开页面；公开部分只有版本颜色表，实际用途描述标记为 Members Only，因此没有把会员内容或版本颜色复制进用途描述数据。
+
+### Python：组合生命周期、官方说明和社区说明
 
 ```python
 import json
@@ -243,19 +263,20 @@ official = read_jsonl("data/autodesk_documentation.jsonl", "lifecycle_id")
 community = read_jsonl("data/community_documentation.jsonl", "lifecycle_id")
 
 item_id = "sysvar-0015"
-print(lifecycle[item_id])
-print(official[item_id])
-print(community.get(item_id))
+life = lifecycle[item_id]                 # 生命周期只看这里
+purpose = official[item_id].get("documentation") or community.get(item_id)
+print(life["availability"])
+print(purpose)
 ```
 
-重新抓取和验证：
+重新生成和验证：
 
 ```powershell
 python scripts/crawl_community_documentation.py --workers 2
 python scripts/validate_community_documentation.py
 ```
 
-缓存位于 `.cache/community-docs/`，不会提交 Git。完整覆盖率、来源状态和冲突 ID 位于 `reports/community_cross_validation_report.json`。CI 只验证已提交结果，不访问第三方网站。
+缓存位于 `.cache/community-docs/`，不会提交 Git。描述覆盖率和来源说明位于 `reports/community_cross_validation_report.json`。CI 只验证已提交结果，不联网重新抓取。
 ## 文件
 
 - `data/autocad_2004_2027.jsonl`：唯一正式数据文件。
@@ -267,9 +288,9 @@ python scripts/validate_community_documentation.py
 - `reports/autodesk_documentation_report.json`：全量抓取报告。
 - `scripts/crawl_autodesk_documentation.py`：可恢复的跨版本抓取器。
 - `scripts/validate_autodesk_documentation.py`：文档数据验证器。
-- `data/community_documentation.jsonl`：715 条第三方交叉验证结果。
+- `data/community_documentation.jsonl`：715 条第三方用途描述结果。
 - `schema/community_documentation.schema.json`：第三方证据记录 Schema。
-- `reports/community_cross_validation_report.json`：覆盖率、冲突与抓取状态报告。
+- `reports/community_cross_validation_report.json`：用途描述覆盖率与抓取状态报告。
 - `scripts/crawl_community_documentation.py`：社区证据抓取器。
 - `scripts/validate_community_documentation.py`：第三方证据验证器。
 
@@ -290,7 +311,7 @@ PASS records=2608 commands=1444 system_variables=1164 version_cells=66084
 ## 限制
 
 - 生命周期主数据不包含 Autodesk 官方命令说明、参数、默认值或帮助正文；官方和社区扩展分别保存在独立 JSONL。
-- 社区交叉验证不是 Autodesk 官方结论；127 条仍未找到，43 条冲突需要资料或 AutoCAD 运行时复核。
+- 社区用途描述不是生命周期来源；127条仍未找到用途描述。
 - `new_in` 和 `changed_in` 忠实保留来源表标记，不擅自修正连续黄色或已可用后再次黄色等来源情况。
 - 白色/灰色只表示不可用；单独查看一个灰色单元格时，不直接猜测它是“尚未引入”还是“已经移除”。`removed_in` 依据相邻版本状态推导；`restored_in` 同时排除黄色 `new` 事件。
 - Commands 的版本轴按年度版本排列；System Variables 额外包含 `2017.1`、`2018.1` 和 `2020.1`。

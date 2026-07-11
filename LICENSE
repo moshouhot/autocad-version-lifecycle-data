@@ -22,7 +22,7 @@ The crawler, matching logic, validators, and original code remain covered by the
 
 ## Community documentation excerpts
 
-`data/community_documentation.jsonl` contains short titles, descriptions, version labels, support-status text, and URLs attributed to CADForum and HyperPics. Those source-originated excerpts remain subject to their respective owners' rights and are explicitly excluded from this repository's CC BY 4.0 data license. The repository's original matching structure, evidence classifications, comparisons, and report metadata remain covered by the licenses stated here.
+`data/community_documentation.jsonl` contains short purpose descriptions and URLs attributed to community documentation sources such as CADForum. Those source-originated excerpts remain subject to their respective owners' rights and are explicitly excluded from this repository's CC BY 4.0 data license. The repository's original matching structure, description-status metadata, related-item structure, and report metadata remain covered by the licenses stated here.
 
 ## Code
 

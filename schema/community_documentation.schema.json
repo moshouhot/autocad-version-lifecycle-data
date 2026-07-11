@@ -1,36 +1,19 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:autocad-community-documentation-record:1.0.0",
-  "title": "AutoCAD community cross-validation record",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["lifecycle_id","type","name","evidence_status","sources","comparisons","related_items","conflicts","crawl_errors"],
-  "properties": {
-    "lifecycle_id": {"type":"string","pattern":"^(cmd|sysvar)-[0-9]{4}$"},
-    "type": {"enum":["command","system_variable"]},
-    "name": {"type":"string","minLength":1},
-    "evidence_status": {"enum":["confirmed","corroborated","single_source","conflict","not_found"]},
-    "sources": {"type":"array","minItems":1,"items":{"$ref":"#/$defs/source"}},
-    "comparisons": {"type":"array","items":{"$ref":"#/$defs/comparison"}},
-    "related_items": {"type":"array","items":{"$ref":"#/$defs/related"}},
-    "conflicts": {"type":"array","items":{"$ref":"#/$defs/conflict"}},
-    "crawl_errors": {"type":"array","items":{"$ref":"#/$defs/error"}}
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"urn:autocad-community-description-record:2.0.0",
+  "title":"AutoCAD community purpose-description record",
+  "type":"object","additionalProperties":false,
+  "required":["lifecycle_id","type","name","description_status","descriptions","related_items"],
+  "properties":{
+    "lifecycle_id":{"type":"string","pattern":"^(cmd|sysvar)-[0-9]{4}$"},
+    "type":{"enum":["command","system_variable"]},
+    "name":{"type":"string","minLength":1},
+    "description_status":{"enum":["matched","not_found","ambiguous"]},
+    "descriptions":{"type":"array","items":{"$ref":"#/$defs/description"}},
+    "related_items":{"type":"array","items":{"$ref":"#/$defs/related"}}
   },
-  "$defs": {
-    "source": {
-      "type":"object","additionalProperties":false,
-      "required":["source","url","match_status","matched_name","description","first_version_text","obsolete_text","product_notes"],
-      "properties": {
-        "source":{"enum":["cadforum","hyperpics"]}, "url":{"type":"string","format":"uri"},
-        "match_status":{"enum":["matched","not_found","robots_denied","error"]},
-        "matched_name":{"type":["string","null"]}, "description":{"type":["string","null"]},
-        "first_version_text":{"type":["string","null"]}, "obsolete_text":{"type":["string","null"]},
-        "product_notes":{"type":"object","additionalProperties":false,"properties":{"available_versions":{"type":"array","items":{"type":"string"}},"lt_available":{"type":"boolean"},"core_console_available":{"type":"boolean"}}}
-      }
-    },
-    "comparison": {"type":"object","additionalProperties":false,"required":["claim","result","detail"],"properties":{"claim":{"enum":["first_known_version","availability","obsolete_status"]},"result":{"enum":["consistent","conflict","unknown"]},"detail":{"type":"string"}}},
-    "related": {"type":"object","additionalProperties":false,"required":["name","type","relation","source_url","evidence_text"],"properties":{"name":{"type":"string"},"type":{"enum":["command","system_variable"]},"relation":{"enum":["controlled_command","command_counterpart","related_command","related_system_variable"]},"source_url":{"type":"string","format":"uri"},"evidence_text":{"type":"string"}}},
-    "conflict": {"type":"object","additionalProperties":false,"required":["field","lifecycle_claim","source_claim","verification"],"properties":{"field":{"enum":["first_known_version","availability","meaning"]},"lifecycle_claim":{"type":"string"},"source_claim":{"type":"string"},"verification":{"type":"string"}}},
-    "error": {"type":"object","additionalProperties":false,"required":["source","kind","detail"],"properties":{"source":{"enum":["cadforum","hyperpics"]},"kind":{"enum":["robots_denied","error"]},"detail":{"type":"string"}}}
+  "$defs":{
+    "description":{"type":"object","additionalProperties":false,"required":["source","url","matched_name","text"],"properties":{"source":{"enum":["cadforum","hyperpics","other"]},"url":{"type":"string","format":"uri"},"matched_name":{"type":"string","minLength":1},"text":{"type":"string","minLength":1}}},
+    "related":{"type":"object","additionalProperties":false,"required":["name","type","relation","source_url","evidence_text"],"properties":{"name":{"type":"string"},"type":{"enum":["command","system_variable"]},"relation":{"enum":["controlled_command","command_counterpart","related_command","related_system_variable"]},"source_url":{"type":"string","format":"uri"},"evidence_text":{"type":"string"}}}
   }
 }
