@@ -2,11 +2,25 @@
 """Build an independent community evidence layer for Autodesk not-found items."""
 from __future__ import annotations
 
+import argparse
+import hashlib
 import html as html_lib
+import json
 import re
+import tempfile
+import threading
+import time
+import urllib.error
 import urllib.parse
-from dataclasses import dataclass, field
+import urllib.request
+import urllib.robotparser
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from html.parser import HTMLParser
+from pathlib import Path
+from typing import Callable
 
 SPACE_RE = re.compile(r"\s+")
 
@@ -263,3 +277,187 @@ def extract_related_items(description: str, target: dict, catalog: dict[str, tup
                 continue
             output.append(RelatedItem(name, candidates[0]["type"], relation, source_url, sentence))
     return output
+
+ALLOWED_COMMUNITY_HOSTS = {"www.cadforum.cz", "cadforum.cz", "www.hyperpics.com", "hyperpics.com"}
+USER_AGENT = "autocad-version-lifecycle-data/1.1 (+https://github.com/moshouhot/autocad-version-lifecycle-data)"
+HYPERPICS_URL = "http://www.hyperpics.com/system_variables/"
+
+class RobotsDenied(PermissionError): pass
+
+@dataclass(frozen=True)
+class HttpResult:
+    text: str
+    status: int
+    url: str
+    from_cache: bool
+
+class FakeResponse:
+    def __init__(self, body: bytes, status: int = 200, headers=None):
+        self._body=body; self.status=status; self.headers=headers or {}; self.url=""
+    def read(self): return self._body
+    def getcode(self): return self.status
+    def __enter__(self): return self
+    def __exit__(self,*_): return False
+
+class CachedHttpClient:
+    def __init__(self, cache_dir: Path, user_agent: str = USER_AGENT, timeout: float = 20,
+                 retries: int = 3, opener: Callable = urllib.request.urlopen,
+                 sleep: Callable = time.sleep, robots: bool = True):
+        self.cache_dir=Path(cache_dir); self.cache_dir.mkdir(parents=True,exist_ok=True)
+        self.user_agent=user_agent; self.timeout=timeout; self.retries=retries
+        self.opener=opener; self.sleep=sleep; self.robots=robots
+        self.stats=Counter(); self._lock=threading.Lock(); self._robots={}
+    def _paths(self,url):
+        key=hashlib.sha256(url.encode("utf-8")).hexdigest()
+        return self.cache_dir/f"{key}.body", self.cache_dir/f"{key}.json"
+    def _allowed(self,url):
+        if not self.robots: return True
+        parts=urllib.parse.urlparse(url); origin=f"{parts.scheme}://{parts.hostname}"
+        with self._lock: rp=self._robots.get(origin)
+        if rp is None:
+            rp=urllib.robotparser.RobotFileParser(f"{origin}/robots.txt")
+            try: rp.read()
+            except Exception: rp=urllib.robotparser.RobotFileParser(); rp.parse([])
+            with self._lock: self._robots[origin]=rp
+        return rp.can_fetch(self.user_agent,url)
+    def get_text(self,url,refresh=False):
+        host=(urllib.parse.urlparse(url).hostname or "").lower()
+        if host not in ALLOWED_COMMUNITY_HOSTS: raise ValueError(f"disallowed community host: {host}")
+        body_path,meta_path=self._paths(url)
+        if not refresh and body_path.exists() and meta_path.exists():
+            with self._lock: self.stats["cache_hits"]+=1
+            meta=json.loads(meta_path.read_text(encoding="utf-8"))
+            return HttpResult(body_path.read_text(encoding="utf-8"),meta["status"],url,True)
+        if not self._allowed(url):
+            with self._lock: self.stats["robots_denied"]+=1
+            raise RobotsDenied(url)
+        last=None
+        for attempt in range(self.retries):
+            try:
+                req=urllib.request.Request(url,headers={"User-Agent":self.user_agent,"Accept":"text/html"})
+                with self.opener(req,timeout=self.timeout) as response:
+                    raw=response.read(); status=getattr(response,"status",None) or response.getcode()
+                    ctype=(getattr(response,"headers",{}) or {}).get("Content-Type","")
+                    match=re.search(r"charset=([\w-]+)",ctype,re.I); charset=match.group(1) if match else "utf-8"
+                    try: text=raw.decode(charset)
+                    except (LookupError,UnicodeDecodeError): text=raw.decode("windows-1252","replace")
+                body_tmp=body_path.with_suffix(".tmp"); body_tmp.write_text(text,encoding="utf-8"); body_tmp.replace(body_path)
+                meta={"url":url,"status":status,"fetched_at":datetime.now(timezone.utc).isoformat(),"body":body_path.name}
+                meta_tmp=meta_path.with_suffix(".tmp"); meta_tmp.write_text(json.dumps(meta,separators=(",",":")),encoding="utf-8"); meta_tmp.replace(meta_path)
+                with self._lock: self.stats["network_requests"]+=1
+                return HttpResult(text,status,url,False)
+            except urllib.error.HTTPError as exc:
+                last=exc
+                if exc.code not in {429,500,502,503,504}: raise
+            except urllib.error.URLError as exc: last=exc
+            with self._lock: self.stats["retries"]+=1
+            if attempt+1<self.retries: self.sleep(2**attempt)
+        raise last or RuntimeError("request failed")
+
+
+def load_jsonl(path: str | Path) -> list[dict]:
+    return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def select_targets(lifecycle_records: list[dict], official_records: list[dict]) -> list[dict]:
+    not_found={d["lifecycle_id"] for d in official_records if (d.get("match") or {}).get("status")=="not_found"}
+    return [record for record in lifecycle_records if record["id"] in not_found]
+
+
+def source_to_dict(source: SourceEvidence) -> dict:
+    return {"source":source.source,"url":source.url,"match_status":source.match_status,
+            "matched_name":source.matched_name,"description":source.description,
+            "first_version_text":source.first_version_text,"obsolete_text":source.obsolete_text,
+            "product_notes":source.product_notes}
+
+def comparison_to_dict(item: Comparison) -> dict: return asdict(item)
+def conflict_to_dict(item: Conflict) -> dict: return asdict(item)
+def related_to_dict(item: RelatedItem) -> dict: return asdict(item)
+
+
+def crawl_target(record: dict, client: CachedHttpClient, hyperpics_index: dict[str,SourceEvidence],
+                 metadata: dict, catalog: dict[str,tuple[dict,...]], refresh: bool=False) -> dict:
+    requested=record["name"]; lookup=requested[1:] if record["type"]=="command" and requested.startswith("'") else requested
+    url=cadforum_url(lookup,record["type"]); sources=[]; errors=[]
+    try:
+        result=client.get_text(url,refresh=refresh)
+        cad=parse_cadforum_html(result.text,url,lookup,record["type"])
+        sources.append(cad)
+    except RobotsDenied as exc:
+        sources.append(SourceEvidence("cadforum",url,"robots_denied")); errors.append({"source":"cadforum","kind":"robots_denied","detail":str(exc)})
+    except Exception as exc:
+        sources.append(SourceEvidence("cadforum",url,"error")); errors.append({"source":"cadforum","kind":"error","detail":f"{type(exc).__name__}: {exc}"})
+    if record["type"]=="system_variable":
+        hp=hyperpics_index.get(normalized(requested))
+        sources.append(hp if hp else SourceEvidence("hyperpics",HYPERPICS_URL,"not_found"))
+    comparisons=[]; conflicts=[]
+    for source in sources:
+        if source.match_status=="matched":
+            c,cf=compare_source_to_lifecycle(record,source,metadata); comparisons.extend(c); conflicts.extend(cf)
+    related=[]
+    for source in sources:
+        if source.match_status=="matched" and source.description:
+            related.extend(extract_related_items(source.description,record,catalog,source.url))
+    status=classify_evidence(sources,comparisons,conflicts)
+    return {"lifecycle_id":record["id"],"type":record["type"],"name":record["name"],
+            "evidence_status":status,"sources":[source_to_dict(x) for x in sources],
+            "comparisons":[comparison_to_dict(x) for x in comparisons],
+            "related_items":[related_to_dict(x) for x in related],
+            "conflicts":[conflict_to_dict(x) for x in conflicts],"crawl_errors":errors}
+
+
+def build_report(records: list[dict], stats: dict, targets: list[dict]) -> dict:
+    types=Counter(r["type"] for r in records); statuses=Counter(r["evidence_status"] for r in records)
+    source_counts={}
+    for source in ("cadforum","hyperpics"):
+        source_counts[source]=dict(Counter(s["match_status"] for r in records for s in r.get("sources",[]) if s["source"]==source))
+    errors=[{"lifecycle_id":r["lifecycle_id"],**e} for r in records for e in r.get("crawl_errors",[])]
+    return {"generated_at":datetime.now(timezone.utc).isoformat(),
+            "counts":{"total":len(records),"commands":types["command"],"system_variables":types["system_variable"]},
+            "target_count":len(targets),"evidence_statuses":dict(statuses),"sources":source_counts,
+            "related_item_records":sum(bool(r.get("related_items")) for r in records),
+            "conflict_ids":sorted(r["lifecycle_id"] for r in records if r.get("conflicts")),
+            "errors":errors,"http":dict(stats)}
+
+
+def atomic_write_jsonl(path: str | Path, records: list[dict]):
+    path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.NamedTemporaryFile("w",encoding="utf-8",delete=False,dir=path.parent,newline="\n") as tmp:
+        for record in records: tmp.write(json.dumps(record,ensure_ascii=False,separators=(",",":"))+"\n")
+        name=tmp.name
+    Path(name).replace(path)
+
+def atomic_write_json(path: str | Path, value: dict):
+    path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.NamedTemporaryFile("w",encoding="utf-8",delete=False,dir=path.parent,newline="\n") as tmp:
+        json.dump(value,tmp,ensure_ascii=False,indent=2); tmp.write("\n"); name=tmp.name
+    Path(name).replace(path)
+
+
+def main(argv=None):
+    ap=argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--lifecycle",default="data/autocad_2004_2027.jsonl"); ap.add_argument("--official",default="data/autodesk_documentation.jsonl")
+    ap.add_argument("--metadata",default="metadata.json"); ap.add_argument("--output",default="data/community_documentation.jsonl")
+    ap.add_argument("--report",default="reports/community_cross_validation_report.json"); ap.add_argument("--cache-dir",default=".cache/community-docs")
+    ap.add_argument("--ids"); ap.add_argument("--limit",type=int); ap.add_argument("--workers",type=int,default=2); ap.add_argument("--refresh",action="store_true")
+    args=ap.parse_args(argv)
+    if not 1<=args.workers<=4: ap.error("--workers must be between 1 and 4")
+    lifecycle=load_jsonl(args.lifecycle); official=load_jsonl(args.official); metadata=json.loads(Path(args.metadata).read_text(encoding="utf-8"))
+    targets=select_targets(lifecycle,official)
+    if args.ids:
+        wanted={x.strip() for x in args.ids.split(",") if x.strip()}; targets=[r for r in targets if r["id"] in wanted]
+    if args.limit is not None: targets=targets[:args.limit]
+    client=CachedHttpClient(Path(args.cache_dir))
+    hyperpics_index={}
+    if any(r["type"]=="system_variable" for r in targets):
+        hp=client.get_text(HYPERPICS_URL,refresh=args.refresh); hyperpics_index=parse_hyperpics_index(hp.text,HYPERPICS_URL)
+    catalog=build_name_catalog(lifecycle); order={r["id"]:i for i,r in enumerate(lifecycle)}; records=[]
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures={pool.submit(crawl_target,r,client,hyperpics_index,metadata,catalog,args.refresh):r for r in targets}
+        for future in as_completed(futures): records.append(future.result())
+    records.sort(key=lambda r:order[r["lifecycle_id"]]); report=build_report(records,client.stats,targets)
+    atomic_write_jsonl(args.output,records); atomic_write_json(args.report,report)
+    print(f"WROTE records={len(records)} commands={sum(r['type']=='command' for r in records)} system_variables={sum(r['type']=='system_variable' for r in records)} errors={len(report['errors'])}")
+    return 1 if report["errors"] else 0
+
+if __name__ == "__main__": raise SystemExit(main())

@@ -80,4 +80,39 @@ class RelatedItemTests(unittest.TestCase):
         items=crawler.extract_related_items("Controls the ACIS version used for files exported by ACISOUT.", records[1], catalog, "https://www.cadforum.cz/x")
         self.assertEqual([(x.name,x.type,x.relation) for x in items], [("ACISOUT","command","controlled_command")])
         self.assertEqual(crawler.extract_related_items("The value is customizable.", records[1], catalog, "u"), [])
+
+class TargetSelectionTests(unittest.TestCase):
+    def test_only_official_not_found_records_are_selected(self):
+        life=[{"id":"cmd-0001","name":"A","type":"command"},{"id":"cmd-0002","name":"B","type":"command"},{"id":"sysvar-0001","name":"C","type":"system_variable"}]
+        docs=[{"lifecycle_id":"cmd-0001","match":{"status":"not_found"}},{"lifecycle_id":"cmd-0002","match":{"status":"matched"}},{"lifecycle_id":"sysvar-0001","match":{"status":"not_found"}}]
+        self.assertEqual([r["id"] for r in crawler.select_targets(life,docs)], ["cmd-0001","sysvar-0001"])
+
+class HttpClientTests(unittest.TestCase):
+    def test_cache_avoids_second_network_call(self):
+        import tempfile
+        calls=[]
+        def opener(req, timeout):
+            calls.append(req.full_url); return crawler.FakeResponse(b"hello",200,{"Content-Type":"text/plain; charset=utf-8"})
+        with tempfile.TemporaryDirectory() as td:
+            client=crawler.CachedHttpClient(Path(td),opener=opener,robots=False)
+            self.assertEqual(client.get_text("https://www.cadforum.cz/en/x").text,"hello")
+            self.assertTrue(client.get_text("https://www.cadforum.cz/en/x").from_cache)
+            self.assertEqual(len(calls),1)
+
+    def test_disallowed_host_is_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(ValueError): crawler.CachedHttpClient(Path(td),robots=False).get_text("https://example.com/x")
+
+class OutputInvariantTests(unittest.TestCase):
+    def test_report_counts_statuses_sources_and_conflicts(self):
+        records=[
+          {"lifecycle_id":"cmd-0001","type":"command","name":"A","evidence_status":"corroborated","sources":[{"source":"cadforum","match_status":"matched"}],"related_items":[],"conflicts":[]},
+          {"lifecycle_id":"sysvar-0001","type":"system_variable","name":"B","evidence_status":"conflict","sources":[{"source":"cadforum","match_status":"matched"},{"source":"hyperpics","match_status":"not_found"}],"related_items":[],"conflicts":[{"field":"availability"}]},
+        ]
+        report=crawler.build_report(records,{"network_requests":2},records)
+        self.assertEqual(report["counts"],{"total":2,"commands":1,"system_variables":1})
+        self.assertEqual(report["evidence_statuses"]["conflict"],1)
+        self.assertEqual(report["sources"]["cadforum"]["matched"],2)
+        self.assertEqual(report["conflict_ids"],["sysvar-0001"])
 if __name__ == "__main__": unittest.main()

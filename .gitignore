@@ -4,3 +4,4 @@ __pycache__/
 Thumbs.db
 .worktrees/
 .cache/autodesk-docs/
+.cache/community-docs/
