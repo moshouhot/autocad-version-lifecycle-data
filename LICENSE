@@ -20,6 +20,10 @@ Attribution must retain the source credits documented in `README.md`, including 
 
 The crawler, matching logic, validators, and original code remain covered by the MIT License below.
 
+## Community documentation excerpts
+
+`data/community_documentation.jsonl` contains short purpose descriptions and URLs attributed to documentation sources such as CADForum, Bricsys, and ManuSoft. Those source-originated excerpts remain subject to their respective owners' rights and are explicitly excluded from this repository's CC BY 4.0 data license. The repository's original matching structure, description-status metadata, related-item structure, and report metadata remain covered by the licenses stated here.
+
 ## Code
 
 The validation script and code examples are licensed under the MIT License:

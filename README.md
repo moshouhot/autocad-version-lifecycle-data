@@ -192,6 +192,91 @@ python scripts/validate_autodesk_documentation.py
 
 抓取报告位于 `reports/autodesk_documentation_report.json`，包含匹配策略、文档版本、未匹配 ID 和 HTTP 缓存统计。CI 只验证已提交数据，不联网重新抓取。
 
+## 社区用途描述补充层
+
+`data/community_documentation.jsonl` 专门为 Autodesk 官方结果中的715条 `not_found` 补充第三方用途说明。它不是第二套生命周期数据，也不会判断 PDF 生命周期是否正确。
+
+**生命周期以 PDF 数据为唯一准则：**
+
+- `availability`
+- `new_in`
+- `changed_in`
+- `removed_in`
+- `restored_in`
+- `available_in_latest`
+
+以上字段只能从 `data/autocad_2004_2027.jsonl` 读取。CADForum、Bricsys、HyperPics 或其他网站的版本年份、obsolete、no longer supported 等说法都不能覆盖这些字段。
+
+当前描述覆盖率：
+
+- 目标：715条（Commands 594，System Variables 121）。
+- `matched`：580条，已取得非空用途描述。
+- `not_found`：135条，尚未找到合格描述。
+- `ambiguous`：0条。
+- 从描述中提取出13条明确关联命令或系统变量。
+
+正式记录只保留必要字段：
+
+```json
+{
+  "lifecycle_id": "sysvar-0015",
+  "type": "system_variable",
+  "name": "ACISOUTVER",
+  "description_status": "matched",
+  "descriptions": [
+    {
+      "source": "cadforum",
+      "url": "https://www.cadforum.cz/en/variable.asp?cmd=ACISOUTVER",
+      "matched_name": "ACISOUTVER",
+      "text": "Controls the ACIS version used for files exported by ACISOUT"
+    }
+  ],
+  "related_items": [
+    {
+      "name": "ACISOUT",
+      "type": "command",
+      "relation": "controlled_command",
+      "source_url": "https://www.cadforum.cz/en/variable.asp?cmd=ACISOUTVER",
+      "evidence_text": "Controls the ACIS version used for files exported by ACISOUT"
+    }
+  ]
+}
+```
+
+PDF 中同名但不同 occurrence 的记录继续分别存在。如果第三方只有一个同名用途说明，可以共享说明；第三方版本年份不用于合并或选择 occurrence。
+
+主要描述来源：[CADForum Commands](https://www.cadforum.cz/en/command.asp)、[CADForum System Variables](https://www.cadforum.cz/en/variable.asp)、[Bricsys Help Center](https://help.bricsys.com/) 和 [ManuSoft AutoCAD Exposed](https://www.manusoft.com/resources/acadexposed/commands.html)。当前580条中，CADForum提供564条、Bricsys提供14条、ManuSoft为两个未文档化命令提供2条。Bricsys 只查询经过人工网络证据确认的精确同名 allowlist；这些页面用于交叉补充用途说明，不用于判断 AutoCAD 版本生命周期。`see NAME` 和 `Description will be added` 之类占位文本不计为用途描述。HyperPics 已按允许使用普通浏览器 User-Agent 检查公开页面；公开部分只有版本颜色表，实际用途描述标记为 Members Only，因此没有把会员内容或版本颜色复制进用途描述数据。
+
+### Python：组合生命周期、官方说明和社区说明
+
+```python
+import json
+
+
+def read_jsonl(path, key):
+    with open(path, encoding="utf-8") as stream:
+        return {record[key]: record for line in stream if (record := json.loads(line))}
+
+
+lifecycle = read_jsonl("data/autocad_2004_2027.jsonl", "id")
+official = read_jsonl("data/autodesk_documentation.jsonl", "lifecycle_id")
+community = read_jsonl("data/community_documentation.jsonl", "lifecycle_id")
+
+item_id = "sysvar-0015"
+life = lifecycle[item_id]                 # 生命周期只看这里
+purpose = official[item_id].get("documentation") or community.get(item_id)
+print(life["availability"])
+print(purpose)
+```
+
+重新生成和验证：
+
+```powershell
+python scripts/crawl_community_documentation.py --workers 2
+python scripts/validate_community_documentation.py
+```
+
+缓存位于 `.cache/community-docs/`，不会提交 Git。描述覆盖率和来源说明位于 `reports/community_cross_validation_report.json`。CI 只验证已提交结果，不联网重新抓取。
 ## 文件
 
 - `data/autocad_2004_2027.jsonl`：唯一正式数据文件。
@@ -203,11 +288,18 @@ python scripts/validate_autodesk_documentation.py
 - `reports/autodesk_documentation_report.json`：全量抓取报告。
 - `scripts/crawl_autodesk_documentation.py`：可恢复的跨版本抓取器。
 - `scripts/validate_autodesk_documentation.py`：文档数据验证器。
+- `data/community_documentation.jsonl`：715 条第三方用途描述结果。
+- `schema/community_documentation.schema.json`：第三方证据记录 Schema。
+- `reports/community_cross_validation_report.json`：用途描述覆盖率与抓取状态报告。
+- `scripts/crawl_community_documentation.py`：社区证据抓取器。
+- `scripts/validate_community_documentation.py`：第三方证据验证器。
 
 运行验证：
 
 ```powershell
 python .\scripts\validate.py
+python .\scripts\validate_autodesk_documentation.py
+python .\scripts\validate_community_documentation.py
 ```
 
 预期结果：
@@ -218,7 +310,8 @@ PASS records=2608 commands=1444 system_variables=1164 version_cells=66084
 
 ## 限制
 
-- 数据不包含 Autodesk 官方命令说明、参数、默认值或帮助正文。
+- 生命周期主数据不包含 Autodesk 官方命令说明、参数、默认值或帮助正文；官方和社区扩展分别保存在独立 JSONL。
+- 社区用途描述不是生命周期来源；135条仍未找到实质性用途描述。
 - `new_in` 和 `changed_in` 忠实保留来源表标记，不擅自修正连续黄色或已可用后再次黄色等来源情况。
 - 白色/灰色只表示不可用；单独查看一个灰色单元格时，不直接猜测它是“尚未引入”还是“已经移除”。`removed_in` 依据相邻版本状态推导；`restored_in` 同时排除黄色 `new` 事件。
 - Commands 的版本轴按年度版本排列；System Variables 额外包含 `2017.1`、`2018.1` 和 `2020.1`。
