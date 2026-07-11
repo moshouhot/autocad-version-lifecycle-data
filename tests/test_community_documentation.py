@@ -131,4 +131,10 @@ class CommunityValidatorTests(unittest.TestCase):
         record={"lifecycle_id":"cmd-0001","type":"command","name":"A","evidence_status":"confirmed","sources":[{"source":"cadforum","url":"https://www.cadforum.cz/en/command.asp?cmd=A","match_status":"matched","matched_name":"A","description":"x","first_version_text":"2004","obsolete_text":None,"product_notes":{}}],"comparisons":[{"claim":"first_known_version","result":"consistent","detail":"ok"}],"related_items":[],"conflicts":[],"crawl_errors":[]}
         errors=validator.validate_record_shape(record,1)
         self.assertTrue(any("confirmed requires" in e for e in errors))
+
+class HyperPicsRobotsTests(unittest.TestCase):
+    def test_robots_denied_is_preserved_for_each_variable(self):
+        denied=crawler.SourceEvidence("hyperpics",crawler.HYPERPICS_URL,"robots_denied")
+        index={"__SOURCE_STATUS__":denied}
+        self.assertEqual(crawler.hyperpics_evidence("ACISOUTVER",index).match_status,"robots_denied")
 if __name__ == "__main__": unittest.main()

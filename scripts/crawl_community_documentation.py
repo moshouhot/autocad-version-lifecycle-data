@@ -364,6 +364,9 @@ def select_targets(lifecycle_records: list[dict], official_records: list[dict]) 
     return [record for record in lifecycle_records if record["id"] in not_found]
 
 
+def hyperpics_evidence(name: str, index: dict[str, SourceEvidence]) -> SourceEvidence:
+    return index.get(normalized(name)) or index.get("__SOURCE_STATUS__") or SourceEvidence("hyperpics",HYPERPICS_URL,"not_found")
+
 def source_to_dict(source: SourceEvidence) -> dict:
     return {"source":source.source,"url":source.url,"match_status":source.match_status,
             "matched_name":source.matched_name,"description":source.description,
@@ -388,8 +391,7 @@ def crawl_target(record: dict, client: CachedHttpClient, hyperpics_index: dict[s
     except Exception as exc:
         sources.append(SourceEvidence("cadforum",url,"error")); errors.append({"source":"cadforum","kind":"error","detail":f"{type(exc).__name__}: {exc}"})
     if record["type"]=="system_variable":
-        hp=hyperpics_index.get(normalized(requested))
-        sources.append(hp if hp else SourceEvidence("hyperpics",HYPERPICS_URL,"not_found"))
+        sources.append(hyperpics_evidence(requested,hyperpics_index))
     comparisons=[]; conflicts=[]
     for source in sources:
         if source.match_status=="matched":
@@ -450,7 +452,10 @@ def main(argv=None):
     client=CachedHttpClient(Path(args.cache_dir))
     hyperpics_index={}
     if any(r["type"]=="system_variable" for r in targets):
-        hp=client.get_text(HYPERPICS_URL,refresh=args.refresh); hyperpics_index=parse_hyperpics_index(hp.text,HYPERPICS_URL)
+        try:
+            hp=client.get_text(HYPERPICS_URL,refresh=args.refresh); hyperpics_index=parse_hyperpics_index(hp.text,HYPERPICS_URL)
+        except RobotsDenied:
+            hyperpics_index={"__SOURCE_STATUS__":SourceEvidence("hyperpics",HYPERPICS_URL,"robots_denied")}
     catalog=build_name_catalog(lifecycle); order={r["id"]:i for i,r in enumerate(lifecycle)}; records=[]
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures={pool.submit(crawl_target,r,client,hyperpics_index,metadata,catalog,args.refresh):r for r in targets}
