@@ -147,3 +147,119 @@ def parse_hyperpics_index(html: str, url: str) -> dict[str, SourceEvidence]:
             product_notes={"available_versions": available},
         )
     return output
+
+@dataclass(frozen=True)
+class VersionClaim:
+    raw: str
+    kind: str
+    sort_key: int | None
+
+@dataclass(frozen=True)
+class Comparison:
+    claim: str
+    result: str
+    detail: str
+
+@dataclass(frozen=True)
+class Conflict:
+    field: str
+    lifecycle_claim: str
+    source_claim: str
+    verification: str
+
+@dataclass(frozen=True)
+class RelatedItem:
+    name: str
+    type: str
+    relation: str
+    source_url: str
+    evidence_text: str
+
+_RELEASE_ORDER = {"R12": 1200, "R13": 1300, "R14": 1400, "2000": 2000, "2000I": 2001, "2002": 2002}
+
+
+def parse_first_version(text: str | None) -> VersionClaim | None:
+    raw = normalize_space(text)
+    if not raw:
+        return None
+    upper = raw.casefold().endswith("or earlier") or raw.startswith(("≤", "<="))
+    token = re.sub(r"\s+or earlier$", "", raw, flags=re.I).lstrip("≤<=> ").upper()
+    if token in _RELEASE_ORDER:
+        key = _RELEASE_ORDER[token]
+    elif re.fullmatch(r"20\d{2}", token):
+        key = int(token)
+    else:
+        return VersionClaim(raw, "unknown", None)
+    return VersionClaim(raw, "upper_bound" if upper else "exact", key)
+
+
+def compare_source_to_lifecycle(record: dict, evidence: SourceEvidence, metadata: dict) -> tuple[list[Comparison], list[Conflict]]:
+    comparisons: list[Comparison] = []
+    conflicts: list[Conflict] = []
+    claim = parse_first_version(evidence.first_version_text)
+    spans = record.get("availability") or []
+    if claim and spans:
+        first = parse_first_version(spans[0]["from"])
+        if claim.sort_key is None or first is None or first.sort_key is None:
+            comparisons.append(Comparison("first_known_version", "unknown", f"Cannot compare {claim.raw!r}."))
+        elif claim.sort_key <= first.sort_key:
+            comparisons.append(Comparison("first_known_version", "consistent", f"Source places the item at or before dataset boundary {spans[0]['from']}."))
+        else:
+            detail = f"Source first version {claim.raw} is later than lifecycle start {spans[0]['from']}."
+            comparisons.append(Comparison("first_known_version", "conflict", detail))
+            conflicts.append(Conflict("first_known_version", spans[0]["from"], claim.raw, "Check another version history source."))
+    obsolete = normalize_space(evidence.obsolete_text)
+    if obsolete:
+        if re.search(r"no longer supported|removed|not supported since", obsolete, re.I):
+            if record.get("available_in_latest"):
+                comparisons.append(Comparison("availability", "conflict", obsolete))
+                conflicts.append(Conflict("availability", "available in latest lifecycle version", obsolete, "Verify in an AutoCAD runtime or another independent source."))
+            else:
+                comparisons.append(Comparison("availability", "consistent", obsolete))
+        else:
+            comparisons.append(Comparison("obsolete_status", "unknown", "Obsolete does not necessarily mean unavailable."))
+    return comparisons, conflicts
+
+
+def classify_evidence(sources: list[SourceEvidence], comparisons: list[Comparison], conflicts: list[Conflict]) -> str:
+    if conflicts or any(c.result == "conflict" for c in comparisons):
+        return "conflict"
+    direct = {s.source for s in sources if s.match_status == "matched"}
+    if len(direct) >= 2 and any(c.result == "consistent" for c in comparisons):
+        return "confirmed"
+    if len(direct) >= 1 and any(c.result == "consistent" for c in comparisons):
+        return "corroborated"
+    if direct:
+        return "single_source"
+    return "not_found"
+
+
+def build_name_catalog(records: list[dict]) -> dict[str, tuple[dict, ...]]:
+    grouped: dict[str, list[dict]] = {}
+    for record in records:
+        grouped.setdefault(normalized(record["name"]), []).append(record)
+    return {name: tuple(items) for name, items in grouped.items()}
+
+
+def _sentences(text: str) -> list[str]:
+    return [normalize_space(x) for x in re.split(r"(?<=[.!?])\s+|[\r\n]+", text) if normalize_space(x)]
+
+
+def extract_related_items(description: str, target: dict, catalog: dict[str, tuple[dict, ...]], source_url: str) -> list[RelatedItem]:
+    output: list[RelatedItem] = []
+    target_name = normalized(target["name"])
+    for sentence in _sentences(description):
+        for name, candidates in catalog.items():
+            if name == target_name or len(candidates) != 1:
+                continue
+            if not re.search(rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])", sentence, re.I):
+                continue
+            before = sentence[:re.search(rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])", sentence, re.I).start()]
+            if re.search(r"exported by|used (?:for|by)|controls?.*(?:command|files?)", before, re.I):
+                relation = "controlled_command" if candidates[0]["type"] == "command" else "related_system_variable"
+            elif re.search(r"\bsee\b|same as", before, re.I):
+                relation = "related_command" if candidates[0]["type"] == "command" else "related_system_variable"
+            else:
+                continue
+            output.append(RelatedItem(name, candidates[0]["type"], relation, source_url, sentence))
+    return output
