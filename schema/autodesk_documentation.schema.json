@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:autocad-autodesk-documentation-record:1.0.0",
+  "title": "AutoCAD Autodesk documentation record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lifecycle_id",
+    "type",
+    "name",
+    "available_in_document_version",
+    "match",
+    "documentation"
+  ],
+  "properties": {
+    "lifecycle_id": {
+      "type": "string",
+      "pattern": "^(cmd|sysvar)-[0-9]{4}$"
+    },
+    "type": {
+      "enum": [
+        "command",
+        "system_variable"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "available_in_document_version": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "match": {
+      "type": "object",
+      "required": [
+        "status",
+        "strategy",
+        "document_version"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "matched",
+            "not_found",
+            "ambiguous"
+          ]
+        },
+        "strategy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "document_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^20[0-9]{2}$"
+        },
+        "candidates": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": false
+    },
+    "documentation": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "official_name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "guid": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
