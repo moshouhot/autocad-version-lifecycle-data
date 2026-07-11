@@ -4,7 +4,7 @@ import argparse,json,re,sys,urllib.parse
 from collections import Counter
 from pathlib import Path
 
-ALLOWED_HOSTS={"www.cadforum.cz","cadforum.cz","www.hyperpics.com","hyperpics.com"}
+ALLOWED_HOSTS={"www.cadforum.cz","cadforum.cz","www.hyperpics.com","hyperpics.com","www.manusoft.com","manusoft.com"}
 TOP_FIELDS={"lifecycle_id","type","name","description_status","descriptions","related_items"}
 ABS_RE=re.compile(r"[A-Za-z]:\\")
 def load(path):return [json.loads(x) for x in Path(path).read_text(encoding="utf-8").splitlines() if x.strip()]
@@ -19,7 +19,7 @@ def validate_record_shape(record,line):
         if set(desc)!={"source","url","matched_name","text"}:errors.append(f"{prefix} description fields mismatch")
         if not str(desc.get("text","")).strip():errors.append(f"{prefix} empty description")
         host=(urllib.parse.urlparse(desc.get("url","")).hostname or "").lower()
-        if desc.get("source") in {"cadforum","hyperpics"} and host not in ALLOWED_HOSTS:errors.append(f"{prefix} source host mismatch")
+        if desc.get("source") in {"cadforum","hyperpics","manusoft"} and host not in ALLOWED_HOSTS:errors.append(f"{prefix} source host mismatch")
     raw=json.dumps(record,ensure_ascii=False)
     if ABS_RE.search(raw) or "<html" in raw.lower() or "<script" in raw.lower():errors.append(f"{prefix} leaked path/html")
     return errors

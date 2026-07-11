@@ -210,10 +210,10 @@ python scripts/validate_autodesk_documentation.py
 当前描述覆盖率：
 
 - 目标：715条（Commands 594，System Variables 121）。
-- `matched`：588条，已取得非空用途描述。
-- `not_found`：127条，尚未找到合格描述。
+- `matched`：566条，已取得非空用途描述。
+- `not_found`：149条，尚未找到合格描述。
 - `ambiguous`：0条。
-- 从描述中提取出15条明确关联命令或系统变量。
+- 从描述中提取出13条明确关联命令或系统变量。
 
 正式记录只保留必要字段：
 
@@ -245,7 +245,7 @@ python scripts/validate_autodesk_documentation.py
 
 PDF 中同名但不同 occurrence 的记录继续分别存在。如果第三方只有一个同名用途说明，可以共享说明；第三方版本年份不用于合并或选择 occurrence。
 
-主要描述来源：[CADForum Commands](https://www.cadforum.cz/en/command.asp) 和 [CADForum System Variables](https://www.cadforum.cz/en/variable.asp)。HyperPics 已按允许使用普通浏览器 User-Agent 检查公开页面；公开部分只有版本颜色表，实际用途描述标记为 Members Only，因此没有把会员内容或版本颜色复制进用途描述数据。
+主要描述来源：[CADForum Commands](https://www.cadforum.cz/en/command.asp)、[CADForum System Variables](https://www.cadforum.cz/en/variable.asp) 和 [ManuSoft AutoCAD Exposed](https://www.manusoft.com/resources/acadexposed/commands.html)。当前566条中，CADForum提供564条，ManuSoft为两个未文档化命令提供2条。`see NAME` 和 `Description will be added` 之类占位文本不计为用途描述。HyperPics 已按允许使用普通浏览器 User-Agent 检查公开页面；公开部分只有版本颜色表，实际用途描述标记为 Members Only，因此没有把会员内容或版本颜色复制进用途描述数据。
 
 ### Python：组合生命周期、官方说明和社区说明
 
@@ -311,7 +311,7 @@ PASS records=2608 commands=1444 system_variables=1164 version_cells=66084
 ## 限制
 
 - 生命周期主数据不包含 Autodesk 官方命令说明、参数、默认值或帮助正文；官方和社区扩展分别保存在独立 JSONL。
-- 社区用途描述不是生命周期来源；127条仍未找到用途描述。
+- 社区用途描述不是生命周期来源；149条仍未找到实质性用途描述。
 - `new_in` 和 `changed_in` 忠实保留来源表标记，不擅自修正连续黄色或已可用后再次黄色等来源情况。
 - 白色/灰色只表示不可用；单独查看一个灰色单元格时，不直接猜测它是“尚未引入”还是“已经移除”。`removed_in` 依据相邻版本状态推导；`restored_in` 同时排除黄色 `new` 事件。
 - Commands 的版本轴按年度版本排列；System Variables 额外包含 `2017.1`、`2018.1` 和 `2020.1`。

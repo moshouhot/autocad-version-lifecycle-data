@@ -21,6 +21,32 @@ class CadForumParserTests(unittest.TestCase):
         self.assertEqual(ev.match_status,"not_found")
         self.assertIsNone(ev.description)
 
+class NameCandidateTests(unittest.TestCase):
+    def test_transparent_parenthetical_or_and_range_candidates(self):
+        self.assertEqual(crawler.name_candidates("'DDCOLOR (COLOR)"),["DDCOLOR","COLOR"])
+        self.assertEqual(crawler.name_candidates("SHELL or SH"),["SHELL","SH"])
+        self.assertEqual(crawler.name_candidates("ERRNO or *ERRNO"),["ERRNO","*ERRNO"])
+        self.assertEqual(crawler.name_candidates("USERI1 - 5"),["USERI1"])
+        self.assertEqual(crawler.name_candidates("` ATTACH"),["ATTACH"])
+        self.assertEqual(crawler.name_candidates("-FBXEXPOR"),["-FBXEXPOR","-FBXEXPORT"])
+        self.assertEqual(crawler.name_candidates("AI_SEND_FEDBACK"),["AI_SEND_FEDBACK","AI_SEND_FEEDBACK"])
+        self.assertEqual(crawler.name_candidates("GEOMARKETVISIBILITY"),["GEOMARKETVISIBILITY","GEOMARKERVISIBILITY"])
+        self.assertEqual(crawler.name_candidates("ONLINESYNCPROVIDE"),["ONLINESYNCPROVIDE","ONLINESYNCPROVIDER"])
+        self.assertEqual(crawler.name_candidates("SUPRESSALERTS"),["SUPRESSALERTS","SUPPRESSALERTS"])
+        self.assertEqual(crawler.name_candidates("CHTEXT"),["CHTEXT","CHT"])
+        self.assertEqual(crawler.name_candidates("'BACKGROUND (VIEW - 2008)"),["BACKGROUND","VIEW"])
+class DescriptionQualityTests(unittest.TestCase):
+    def test_redirects_and_placeholders_are_not_purpose_descriptions(self):
+        self.assertFalse(crawler.is_substantive_description("see COLOR"))
+        self.assertFalse(crawler.is_substantive_description("Description will be added"))
+        self.assertTrue(crawler.is_substantive_description("Sets the current drawing color."))
+        self.assertEqual(crawler.description_redirect_candidate("(see ADCENTER)"),"ADCENTER")
+        self.assertIsNone(crawler.description_redirect_candidate("Sets the current drawing color."))
+class ManuSoftParserTests(unittest.TestCase):
+    def test_undocumented_command_notes_become_descriptions(self):
+        index=crawler.parse_manusoft_commands(fixture("manusoft_commands.html"),crawler.MANUSOFT_COMMANDS_URL)
+        self.assertEqual(index["OLDMTEXT"].description,"Runs the R13 MTEXT command.")
+        self.assertEqual(index["ENDSV"].source,"manusoft")
 class DescriptionRecordTests(unittest.TestCase):
     def test_pdf_lifecycle_is_not_compared_or_copied(self):
         record={"id":"sysvar-0001","type":"system_variable","name":"BLIPMODE","availability":[{"from":"2004","to":"2027"}],"available_in_latest":True}

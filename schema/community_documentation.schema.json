@@ -13,7 +13,7 @@
     "related_items":{"type":"array","items":{"$ref":"#/$defs/related"}}
   },
   "$defs":{
-    "description":{"type":"object","additionalProperties":false,"required":["source","url","matched_name","text"],"properties":{"source":{"enum":["cadforum","hyperpics","other"]},"url":{"type":"string","format":"uri"},"matched_name":{"type":"string","minLength":1},"text":{"type":"string","minLength":1}}},
+    "description":{"type":"object","additionalProperties":false,"required":["source","url","matched_name","text"],"properties":{"source":{"enum":["cadforum","manusoft","hyperpics","other"]},"url":{"type":"string","format":"uri"},"matched_name":{"type":"string","minLength":1},"text":{"type":"string","minLength":1}}},
     "related":{"type":"object","additionalProperties":false,"required":["name","type","relation","source_url","evidence_text"],"properties":{"name":{"type":"string"},"type":{"enum":["command","system_variable"]},"relation":{"enum":["controlled_command","command_counterpart","related_command","related_system_variable"]},"source_url":{"type":"string","format":"uri"},"evidence_text":{"type":"string"}}}
   }
 }

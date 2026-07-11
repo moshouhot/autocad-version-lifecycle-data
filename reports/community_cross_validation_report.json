@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-11T14:32:19.451095+00:00",
+  "generated_at": "2026-07-11T15:19:43.281172+00:00",
   "counts": {
     "total": 715,
     "commands": 594,
@@ -7,18 +7,20 @@
   },
   "target_count": 715,
   "description_statuses": {
-    "matched": 588,
-    "not_found": 127
+    "matched": 566,
+    "not_found": 149
   },
   "sources": {
-    "cadforum": 588
+    "cadforum": 564,
+    "manusoft": 2
   },
-  "related_item_records": 15,
+  "related_item_records": 13,
   "source_notes": {
+    "manusoft": "AutoCAD Exposed is used only for exact undocumented-command notes when CADForum has no substantive description.",
     "hyperpics": "Public page checked with a browser User-Agent on 2026-07-11; it exposes a version-color table, while purpose descriptions are marked members-only, so no HyperPics descriptions are copied."
   },
   "errors": [],
   "http": {
-    "cache_hits": 715
+    "cache_hits": 753
   }
 }

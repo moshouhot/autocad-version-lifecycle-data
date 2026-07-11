@@ -13,9 +13,18 @@ from pathlib import Path
 from typing import Callable
 
 SPACE_RE=re.compile(r"\s+")
-ALLOWED_HOSTS={"www.cadforum.cz","cadforum.cz"}
+ALLOWED_HOSTS={"www.cadforum.cz","cadforum.cz","www.manusoft.com","manusoft.com"}
 USER_AGENT="autocad-version-lifecycle-data/1.2 (+https://github.com/moshouhot/autocad-version-lifecycle-data)"
-SOURCE_NOTES={"hyperpics":"Public page checked with a browser User-Agent on 2026-07-11; it exposes a version-color table, while purpose descriptions are marked members-only, so no HyperPics descriptions are copied."}
+MANUSOFT_COMMANDS_URL="https://www.manusoft.com/resources/acadexposed/commands.html"
+KNOWN_DESCRIPTION_ALIASES={
+    "-FBXEXPOR":"-FBXEXPORT",
+    "AI_SEND_FEDBACK":"AI_SEND_FEEDBACK",
+    "GEOMARKETVISIBILITY":"GEOMARKERVISIBILITY",
+    "ONLINESYNCPROVIDE":"ONLINESYNCPROVIDER",
+    "SUPRESSALERTS":"SUPPRESSALERTS",
+    "CHTEXT":"CHT",
+}
+SOURCE_NOTES={"manusoft":"AutoCAD Exposed is used only for exact undocumented-command notes when CADForum has no substantive description.","hyperpics":"Public page checked with a browser User-Agent on 2026-07-11; it exposes a version-color table, while purpose descriptions are marked members-only, so no HyperPics descriptions are copied."}
 
 def normalize_space(value): return SPACE_RE.sub(" ",html_lib.unescape(value or "")).strip()
 def normalized(value): return normalize_space(value).upper()
@@ -34,6 +43,26 @@ def cadforum_url(name,item_type):
     query=urllib.parse.urlencode({"cmd":name},quote_via=urllib.parse.quote)
     return f"https://www.cadforum.cz/en/{page}?{query}"
 
+def name_candidates(name):
+    raw=normalize_space(name).lstrip("'`").strip()
+    values=[]
+    or_parts=re.split(r"\s+or\s+",raw,flags=re.I)
+    if len(or_parts)>1:
+        values.extend(or_parts)
+    else:
+        match=re.match(r"^(.+?)\s+\(([^()]+)\)$",raw)
+        if match:
+            values.append(match.group(1));values.append(re.sub(r"\s+-\s+20\d{2}$","",match.group(2)))
+        else:
+            range_match=re.match(r"^([A-Z_]+\d+)\s*-\s*\d+$",raw,re.I)
+            values.append(range_match.group(1) if range_match else raw)
+    output=[]
+    for value in values:
+        value=normalized(value)
+        if value and value not in output:output.append(value)
+    alias=KNOWN_DESCRIPTION_ALIASES.get(normalized(raw))
+    if alias and alias not in output:output.append(alias)
+    return output
 class TextCollector(HTMLParser):
     def __init__(self): super().__init__(convert_charrefs=True); self.parts=[]; self._skip=0
     def handle_starttag(self,tag,attrs):
@@ -64,6 +93,35 @@ def parse_cadforum_html(html,url,expected_name,expected_type):
     return SourceEvidence("cadforum",url,"matched" if description else "not_found",normalized(hit.group(1)),description)
 
 
+def is_substantive_description(text):
+    value=normalize_space(text)
+    if not value:return False
+    if re.fullmatch(r"\(?\s*see\s+[A-Z0-9_+*'-]+\s*\)?",value,re.I):return False
+    if value.casefold() in {"description will be added","description not available"}:return False
+    return True
+def description_redirect_candidate(text):
+    match=re.fullmatch(r"\(?\s*see\s+([A-Z0-9_+*'-]+)\s*\)?",normalize_space(text),re.I)
+    return normalized(match.group(1)) if match else None
+class SimpleTableParser(HTMLParser):
+    def __init__(self):super().__init__(convert_charrefs=True);self.rows=[];self.row=None;self.cell=None
+    def handle_starttag(self,tag,attrs):
+        tag=tag.lower()
+        if tag=="tr":self.row=[]
+        elif tag in {"td","th"} and self.row is not None:self.cell=[]
+    def handle_data(self,data):
+        if self.cell is not None:self.cell.append(data)
+    def handle_endtag(self,tag):
+        tag=tag.lower()
+        if tag in {"td","th"} and self.cell is not None:self.row.append(normalize_space("".join(self.cell)));self.cell=None
+        elif tag=="tr" and self.row is not None:self.rows.append(self.row);self.row=None
+
+def parse_manusoft_commands(html,url):
+    parser=SimpleTableParser();parser.feed(html);output={}
+    for row in parser.rows:
+        if len(row)<3 or normalized(row[0])=="COMMAND":continue
+        name=normalized(row[0]);description=normalize_space(row[2])
+        if name and description:output[name]=SourceEvidence("manusoft",url,"matched",name,description)
+    return output
 def build_name_catalog(records):
     grouped={}
     for record in records:grouped.setdefault(normalized(record["name"]),[]).append(record)
@@ -154,12 +212,26 @@ class CachedHttpClient:
 def load_jsonl(path):return [json.loads(x) for x in Path(path).read_text(encoding="utf-8").splitlines() if x.strip()]
 def select_targets(lifecycle,official):
     ids={d["lifecycle_id"] for d in official if (d.get("match") or {}).get("status")=="not_found"};return [r for r in lifecycle if r["id"] in ids]
-def crawl_target(record,client,catalog,refresh=False):
-    lookup=record["name"][1:] if record["type"]=="command" and record["name"].startswith("'") else record["name"];url=cadforum_url(lookup,record["type"]);errors=[]
-    try:source=parse_cadforum_html(client.get_text(url,refresh).text,url,lookup,record["type"])
-    except Exception as exc:source=SourceEvidence("cadforum",url,"not_found");errors.append({"lifecycle_id":record["id"],"source":"cadforum","kind":type(exc).__name__,"detail":str(exc)})
+def crawl_target(record,client,catalog,manusoft_index,refresh=False):
+    errors=[];source=None;candidates=name_candidates(record["name"]);index=0
+    while index<len(candidates):
+        candidate=candidates[index];index+=1;url=cadforum_url(candidate,record["type"])
+        try:
+            evidence=parse_cadforum_html(client.get_text(url,refresh).text,url,candidate,record["type"])
+        except Exception as exc:
+            errors.append({"lifecycle_id":record["id"],"source":"cadforum","kind":type(exc).__name__,"detail":str(exc)})
+            continue
+        if evidence.match_status!="matched":continue
+        if is_substantive_description(evidence.description):source=evidence;break
+        redirect=description_redirect_candidate(evidence.description)
+        if redirect and redirect not in candidates:candidates.append(redirect)
+    if source is None and record["type"]=="command":
+        for candidate in candidates:
+            evidence=manusoft_index.get(candidate)
+            if evidence and is_substantive_description(evidence.description):source=evidence;break
+    if source is None:
+        first=name_candidates(record["name"])[0];source=SourceEvidence("cadforum",cadforum_url(first,record["type"]),"not_found")
     return build_description_record(record,[source],catalog),errors
-
 def build_report(records,stats,targets,errors,source_notes):
     types=Counter(r["type"] for r in records);statuses=Counter(r["description_status"] for r in records);sources=Counter(d["source"] for r in records for d in r["descriptions"])
     return {"generated_at":datetime.now(timezone.utc).isoformat(),"counts":{"total":len(records),"commands":types["command"],"system_variables":types["system_variable"]},"target_count":len(targets),"description_statuses":dict(statuses),"sources":dict(sources),"related_item_records":sum(bool(r["related_items"]) for r in records),"source_notes":source_notes,"errors":errors,"http":dict(stats)}
@@ -180,8 +252,10 @@ def main(argv=None):
     if args.ids:wanted={x.strip() for x in args.ids.split(",")};targets=[r for r in targets if r["id"] in wanted]
     if args.limit is not None:targets=targets[:args.limit]
     client=CachedHttpClient(Path(args.cache_dir));catalog=build_name_catalog(lifecycle);order={r["id"]:i for i,r in enumerate(lifecycle)};records=[];errors=[]
+    try:manusoft_index=parse_manusoft_commands(client.get_text(MANUSOFT_COMMANDS_URL,args.refresh).text,MANUSOFT_COMMANDS_URL)
+    except Exception as exc:manusoft_index={};errors.append({"source":"manusoft","kind":type(exc).__name__,"detail":str(exc)})
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures=[pool.submit(crawl_target,r,client,catalog,args.refresh) for r in targets]
+        futures=[pool.submit(crawl_target,r,client,catalog,manusoft_index,args.refresh) for r in targets]
         for future in as_completed(futures):record,errs=future.result();records.append(record);errors.extend(errs)
     records.sort(key=lambda r:order[r["lifecycle_id"]]);report=build_report(records,client.stats,targets,errors,SOURCE_NOTES);atomic_write_jsonl(args.output,records);atomic_write_json(args.report,report)
     print(f"WROTE records={len(records)} matched={sum(r['description_status']=='matched' for r in records)} not_found={sum(r['description_status']=='not_found' for r in records)} ambiguous={sum(r['description_status']=='ambiguous' for r in records)} errors={len(errors)}")
