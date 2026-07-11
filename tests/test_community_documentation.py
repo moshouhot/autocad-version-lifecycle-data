@@ -115,4 +115,20 @@ class OutputInvariantTests(unittest.TestCase):
         self.assertEqual(report["evidence_statuses"]["conflict"],1)
         self.assertEqual(report["sources"]["cadforum"]["matched"],2)
         self.assertEqual(report["conflict_ids"],["sysvar-0001"])
+
+class CommunityValidatorTests(unittest.TestCase):
+    def test_validator_rejects_duplicate_and_non_target_ids(self):
+        from scripts import validate_community_documentation as validator
+        lifecycle=[{"id":"cmd-0001","name":"A","type":"command"}]
+        official=[{"lifecycle_id":"cmd-0001","match":{"status":"not_found"}}]
+        record={"lifecycle_id":"cmd-0001","type":"command","name":"A","evidence_status":"not_found","sources":[{"source":"cadforum","url":"https://www.cadforum.cz/en/command.asp?cmd=A","match_status":"not_found","matched_name":None,"description":None,"first_version_text":None,"obsolete_text":None,"product_notes":{}}],"comparisons":[],"related_items":[],"conflicts":[],"crawl_errors":[]}
+        errors=validator.validate_records(lifecycle,official,[record,record],{"counts":{"total":2,"commands":2,"system_variables":0},"target_count":1,"evidence_statuses":{"not_found":2},"sources":{"cadforum":{"not_found":2},"hyperpics":{}},"conflict_ids":[],"errors":[]})
+        self.assertTrue(any("duplicate" in e for e in errors))
+        self.assertTrue(any("record count" in e for e in errors))
+
+    def test_confirmed_requires_two_direct_sources(self):
+        from scripts import validate_community_documentation as validator
+        record={"lifecycle_id":"cmd-0001","type":"command","name":"A","evidence_status":"confirmed","sources":[{"source":"cadforum","url":"https://www.cadforum.cz/en/command.asp?cmd=A","match_status":"matched","matched_name":"A","description":"x","first_version_text":"2004","obsolete_text":None,"product_notes":{}}],"comparisons":[{"claim":"first_known_version","result":"consistent","detail":"ok"}],"related_items":[],"conflicts":[],"crawl_errors":[]}
+        errors=validator.validate_record_shape(record,1)
+        self.assertTrue(any("confirmed requires" in e for e in errors))
 if __name__ == "__main__": unittest.main()
