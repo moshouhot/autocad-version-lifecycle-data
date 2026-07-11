@@ -263,21 +263,21 @@ def extract_related_items(description: str, target: dict, catalog: dict[str, tup
     output: list[RelatedItem] = []
     target_name = normalized(target["name"])
     for sentence in _sentences(description):
-        for name, candidates in catalog.items():
+        tokens = dict.fromkeys(normalized(m.group(0)) for m in re.finditer(r"(?<![A-Z0-9_])[+*'-]?[A-Z0-9_]{2,}(?![A-Z0-9_])", sentence, re.I))
+        for name in tokens:
+            candidates = catalog.get(name, ())
             if name == target_name or len(candidates) != 1:
                 continue
-            if not re.search(rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])", sentence, re.I):
-                continue
-            before = sentence[:re.search(rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])", sentence, re.I).start()]
-            if re.search(r"exported by|used (?:for|by)|controls?.*(?:command|files?)", before, re.I):
-                relation = "controlled_command" if candidates[0]["type"] == "command" else "related_system_variable"
-            elif re.search(r"\bsee\b|same as", before, re.I):
-                relation = "related_command" if candidates[0]["type"] == "command" else "related_system_variable"
+            boundary = rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])"
+            item_type = candidates[0]["type"]
+            if re.search(rf"(?:now\s+)?see\s+{boundary}|same\s+as\s+{boundary}", sentence, re.I):
+                relation = "related_command" if item_type == "command" else "related_system_variable"
+            elif re.search(rf"(?:exported|used)\s+by\s+{boundary}|controls?\s+(?:the\s+)?{boundary}\s+command", sentence, re.I):
+                relation = "controlled_command" if item_type == "command" else "related_system_variable"
             else:
                 continue
-            output.append(RelatedItem(name, candidates[0]["type"], relation, source_url, sentence))
+            output.append(RelatedItem(name, item_type, relation, source_url, sentence))
     return output
-
 ALLOWED_COMMUNITY_HOSTS = {"www.cadforum.cz", "cadforum.cz", "www.hyperpics.com", "hyperpics.com"}
 USER_AGENT = "autocad-version-lifecycle-data/1.1 (+https://github.com/moshouhot/autocad-version-lifecycle-data)"
 HYPERPICS_URL = "http://www.hyperpics.com/system_variables/"

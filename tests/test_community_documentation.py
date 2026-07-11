@@ -81,6 +81,25 @@ class RelatedItemTests(unittest.TestCase):
         self.assertEqual([(x.name,x.type,x.relation) for x in items], [("ACISOUT","command","controlled_command")])
         self.assertEqual(crawler.extract_related_items("The value is customizable.", records[1], catalog, "u"), [])
 
+    def test_candidate_first_lookup_does_not_scan_entire_catalog(self):
+        class NoItemsDict(dict):
+            def items(self): raise AssertionError("catalog-wide scan")
+        target={"id":"sysvar-1","name":"ACISOUTVER","type":"system_variable"}
+        catalog=NoItemsDict({"ACISOUT":({"id":"cmd-1","name":"ACISOUT","type":"command"},),"ACISOUTVER":(target,)})
+        items=crawler.extract_related_items("Files exported by ACISOUT.",target,catalog,"u")
+        self.assertEqual(items[0].name,"ACISOUT")
+    def test_does_not_treat_block_editor_as_controlled_command(self):
+        records=[{"id":"cmd-1","name":"PARAMETERS","type":"command"},{"id":"cmd-2","name":"BLOCK","type":"command"}]
+        catalog=crawler.build_name_catalog(records)
+        items=crawler.extract_related_items("Controls parameters used in the drawing (command not available in Block editor).",records[0],catalog,"u")
+        self.assertEqual(items,[])
+
+    def test_now_see_relation_takes_priority_over_earlier_controls(self):
+        records=[{"id":"sysvar-1","name":"AUTOCOMPLETEMODE","type":"system_variable"},{"id":"cmd-1","name":"INPUTSEARCHOPTIONS","type":"command"}]
+        catalog=crawler.build_name_catalog(records)
+        items=crawler.extract_related_items("Controls automated keyboard features (now see INPUTSEARCHOPTIONS).",records[0],catalog,"u")
+        self.assertEqual([(x.name,x.relation) for x in items],[("INPUTSEARCHOPTIONS","related_command")])
+
 class TargetSelectionTests(unittest.TestCase):
     def test_only_official_not_found_records_are_selected(self):
         life=[{"id":"cmd-0001","name":"A","type":"command"},{"id":"cmd-0002","name":"B","type":"command"},{"id":"sysvar-0001","name":"C","type":"system_variable"}]
