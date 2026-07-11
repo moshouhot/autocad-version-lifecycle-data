@@ -47,6 +47,40 @@ class ManuSoftParserTests(unittest.TestCase):
         index=crawler.parse_manusoft_commands(fixture("manusoft_commands.html"),crawler.MANUSOFT_COMMANDS_URL)
         self.assertEqual(index["OLDMTEXT"].description,"Runs the R13 MTEXT command.")
         self.assertEqual(index["ENDSV"].source,"manusoft")
+
+class BricsysParserTests(unittest.TestCase):
+    def test_explicit_allowlist_urls_only(self):
+        self.assertEqual(
+            crawler.bricsys_url("AI_PSPACE","command"),
+            "https://help.bricsys.com/en-us/document/command-reference/a/ai_pspace-command-express-tools",
+        )
+        self.assertIsNone(crawler.bricsys_url("UNRESEARCHED","command"))
+
+    def test_exact_command_and_system_variable_purpose_descriptions(self):
+        cmd=crawler.parse_bricsys_html(
+            fixture("bricsys_command.html"),
+            "https://help.bricsys.com/en-us/document/command-reference/a/aidimprec-command",
+            "AIDIMPREC","command",
+        )
+        var=crawler.parse_bricsys_html(
+            fixture("bricsys_system_variable.html"),
+            "https://help.bricsys.com/en-us/document/system-variable-reference/l/lispinit-system-variable",
+            "LISPINIT","system_variable",
+        )
+        self.assertEqual(cmd.description,"Changes the display precision of dimension text.")
+        self.assertEqual(var.description,"Controls if LISP variables and functions are preserved between drawings.")
+        self.assertEqual(cmd.source,"bricsys")
+
+    def test_wrong_document_name_is_rejected(self):
+        evidence=crawler.parse_bricsys_html(
+            fixture("bricsys_command.html"),"https://help.bricsys.com/x","OTHER","command"
+        )
+        self.assertEqual(evidence.match_status,"not_found")
+
+    def test_express_tools_title_suffix_is_transparent(self):
+        html='<h1>AI_PSPACE command (Express Tools)</h1><p class="shortdesc">Switches to the last opened layout in paper space.</p>'
+        evidence=crawler.parse_bricsys_html(html,"https://help.bricsys.com/x","AI_PSPACE","command")
+        self.assertEqual(evidence.description,"Switches to the last opened layout in paper space.")
 class DescriptionRecordTests(unittest.TestCase):
     def test_pdf_lifecycle_is_not_compared_or_copied(self):
         record={"id":"sysvar-0001","type":"system_variable","name":"BLIPMODE","availability":[{"from":"2004","to":"2027"}],"available_in_latest":True}
@@ -113,5 +147,12 @@ class CommunityValidatorTests(unittest.TestCase):
         self.assertTrue(any("fields mismatch" in x for x in validator.validate_record_shape(invalid,1)))
         empty=dict(valid,descriptions=[])
         self.assertTrue(any("matched without description" in x for x in validator.validate_record_shape(empty,1)))
+
+    def test_bricsys_source_requires_the_bricsys_help_host(self):
+        from scripts import validate_community_documentation as validator
+        valid={"lifecycle_id":"cmd-0001","type":"command","name":"AIDIMPREC","description_status":"matched","descriptions":[{"source":"bricsys","url":"https://help.bricsys.com/en-us/document/x","matched_name":"AIDIMPREC","text":"Changes dimension precision."}],"related_items":[]}
+        self.assertEqual(validator.validate_record_shape(valid,1),[])
+        valid["descriptions"][0]["url"]="https://example.com/copied"
+        self.assertTrue(any("source host mismatch" in x for x in validator.validate_record_shape(valid,1)))
 
 if __name__=="__main__": unittest.main()

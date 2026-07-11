@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 SPACE_RE=re.compile(r"\s+")
-ALLOWED_HOSTS={"www.cadforum.cz","cadforum.cz","www.manusoft.com","manusoft.com"}
+ALLOWED_HOSTS={"www.cadforum.cz","cadforum.cz","www.manusoft.com","manusoft.com","help.bricsys.com"}
 USER_AGENT="autocad-version-lifecycle-data/1.2 (+https://github.com/moshouhot/autocad-version-lifecycle-data)"
 MANUSOFT_COMMANDS_URL="https://www.manusoft.com/resources/acadexposed/commands.html"
 KNOWN_DESCRIPTION_ALIASES={
@@ -24,7 +24,23 @@ KNOWN_DESCRIPTION_ALIASES={
     "SUPRESSALERTS":"SUPPRESSALERTS",
     "CHTEXT":"CHT",
 }
-SOURCE_NOTES={"manusoft":"AutoCAD Exposed is used only for exact undocumented-command notes when CADForum has no substantive description.","hyperpics":"Public page checked with a browser User-Agent on 2026-07-11; it exposes a version-color table, while purpose descriptions are marked members-only, so no HyperPics descriptions are copied."}
+BRICSYS_PATHS={
+    ("command","AI_PSPACE"):"command-reference/a/ai_pspace-command-express-tools",
+    ("command","AIDIMPREC"):"command-reference/a/aidimprec-command",
+    ("command","AIDIMSTYLE"):"command-reference/a/aidimstyle-command",
+    ("command","AIOBJECTSCALEADD"):"command-reference/a/aiobjectscaleadd-command",
+    ("command","AIOBJECTSCALEREMOVE"):"command-reference/a/aiobjectscaleremove-command",
+    ("command","RENDERPRESETS"):"command-reference/r/renderpresets-command",
+    ("command","VBANEW"):"command-reference/v/vbanew-command",
+    ("system_variable","DIMFIT"):"system-variable-reference/d/dimfit-system-variable",
+    ("system_variable","DIMSHO"):"system-variable-reference/d/dimsho-system-variable",
+    ("system_variable","DIMUNIT"):"system-variable-reference/d/dimunit-system-variable",
+    ("system_variable","HIDEXREFSCALES"):"system-variable-reference/h/hidexrefscales-system-variable",
+    ("system_variable","LISPINIT"):"system-variable-reference/l/lispinit-system-variable",
+    ("system_variable","PLOTTER"):"system-variable-reference/p/plotter-system-variable",
+    ("system_variable","PROXYWEBSEARCH"):"system-variable-reference/p/proxywebsearch-system-variable",
+}
+SOURCE_NOTES={"bricsys":"Bricsys public help is used only for an explicit allowlist of exact same-name commands and system variables; it supplies purpose text only and does not affect the PDF lifecycle.","manusoft":"AutoCAD Exposed is used only for exact undocumented-command notes when CADForum has no substantive description.","hyperpics":"Public page checked with a browser User-Agent on 2026-07-11; it exposes a version-color table, while purpose descriptions are marked members-only, so no HyperPics descriptions are copied."}
 
 def normalize_space(value): return SPACE_RE.sub(" ",html_lib.unescape(value or "")).strip()
 def normalized(value): return normalize_space(value).upper()
@@ -122,6 +138,41 @@ def parse_manusoft_commands(html,url):
         name=normalized(row[0]);description=normalize_space(row[2])
         if name and description:output[name]=SourceEvidence("manusoft",url,"matched",name,description)
     return output
+
+class BricsysDocumentParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True);self.events=[];self._tag=None;self._attrs={};self._parts=[];self._skip=0
+    def handle_starttag(self,tag,attrs):
+        tag=tag.lower()
+        if tag in {"script","style","nav"}:self._skip+=1;return
+        if not self._skip and tag in {"h1","p"}:self._tag=tag;self._attrs=dict(attrs);self._parts=[]
+    def handle_data(self,data):
+        if self._tag and not self._skip:self._parts.append(data)
+    def handle_endtag(self,tag):
+        tag=tag.lower()
+        if tag in {"script","style","nav"}:
+            if self._skip:self._skip-=1
+            return
+        if not self._skip and tag==self._tag:
+            self.events.append((self._tag,normalize_space("".join(self._parts)),self._attrs));self._tag=None;self._attrs={};self._parts=[]
+
+def bricsys_url(name,item_type):
+    path=BRICSYS_PATHS.get((item_type,normalized(name)))
+    return f"https://help.bricsys.com/en-us/document/{path}" if path else None
+
+def parse_bricsys_html(html,url,expected_name,expected_type):
+    parser=BricsysDocumentParser();parser.feed(html)
+    kind="command" if expected_type=="command" else "system variable";wanted=normalized(f"{expected_name} {kind}")
+    accepted_titles={wanted,wanted+" (EXPRESS TOOLS)"}
+    heading_index=next((i for i,(tag,text,_) in enumerate(parser.events) if tag=="h1" and normalized(text) in accepted_titles),None)
+    if heading_index is None:return SourceEvidence("bricsys",url,"not_found")
+    paragraphs=[(text,attrs) for tag,text,attrs in parser.events[heading_index+1:] if tag=="p" and text]
+    if expected_type=="command":
+        preferred=[text for text,attrs in paragraphs if "shortdesc" in attrs.get("class","").split()]
+        description=preferred[0] if preferred else (paragraphs[0][0] if paragraphs else None)
+    else:description=paragraphs[0][0] if paragraphs else None
+    status="matched" if is_substantive_description(description) else "not_found"
+    return SourceEvidence("bricsys",url,status,normalized(expected_name) if status=="matched" else None,description if status=="matched" else None)
 def build_name_catalog(records):
     grouped={}
     for record in records:grouped.setdefault(normalized(record["name"]),[]).append(record)
@@ -225,6 +276,14 @@ def crawl_target(record,client,catalog,manusoft_index,refresh=False):
         if is_substantive_description(evidence.description):source=evidence;break
         redirect=description_redirect_candidate(evidence.description)
         if redirect and redirect not in candidates:candidates.append(redirect)
+    if source is None:
+        for candidate in candidates:
+            url=bricsys_url(candidate,record["type"])
+            if not url:continue
+            try:evidence=parse_bricsys_html(client.get_text(url,refresh).text,url,candidate,record["type"])
+            except Exception as exc:
+                errors.append({"lifecycle_id":record["id"],"source":"bricsys","kind":type(exc).__name__,"detail":str(exc)});continue
+            if evidence.match_status=="matched" and is_substantive_description(evidence.description):source=evidence;break
     if source is None and record["type"]=="command":
         for candidate in candidates:
             evidence=manusoft_index.get(candidate)

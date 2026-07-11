@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-11T15:19:43.281172+00:00",
+  "generated_at": "2026-07-11T15:53:15.334515+00:00",
   "counts": {
     "total": 715,
     "commands": 594,
@@ -7,20 +7,22 @@
   },
   "target_count": 715,
   "description_statuses": {
-    "matched": 566,
-    "not_found": 149
+    "matched": 580,
+    "not_found": 135
   },
   "sources": {
     "cadforum": 564,
+    "bricsys": 14,
     "manusoft": 2
   },
   "related_item_records": 13,
   "source_notes": {
+    "bricsys": "Bricsys public help is used only for an explicit allowlist of exact same-name commands and system variables; it supplies purpose text only and does not affect the PDF lifecycle.",
     "manusoft": "AutoCAD Exposed is used only for exact undocumented-command notes when CADForum has no substantive description.",
     "hyperpics": "Public page checked with a browser User-Agent on 2026-07-11; it exposes a version-color table, while purpose descriptions are marked members-only, so no HyperPics descriptions are copied."
   },
   "errors": [],
   "http": {
-    "cache_hits": 753
+    "cache_hits": 767
   }
 }
